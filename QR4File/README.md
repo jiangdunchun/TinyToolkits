@@ -6,4 +6,4 @@
 
 # How TO RUN
 
-> run 'pip install -r requirements.txt' in terminal
+> run 'pip install -r requirements.txt' in terminal (the python version in my mechine is 3.9)
