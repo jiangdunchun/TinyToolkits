@@ -4,10 +4,10 @@ cd %1
 :loop
 git pull
 if %errorlevel% equ 0 (
-  echo git pull successful.
+  echo Git pull successful.
   goto end
 ) else (
-  echo git pull failed. retrying...
+  echo Git pull failed. retrying...
   timeout /t 5 >nul
   goto loop
 )
