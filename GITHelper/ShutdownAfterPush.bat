@@ -4,7 +4,7 @@ cd %1
 :loop
 git push
 if %errorlevel% equ 0 (
-  echo git push successful.
+  echo Git push successful.
   goto end
 ) else (
   echo Git push failed. Retrying...
