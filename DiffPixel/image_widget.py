@@ -23,15 +23,28 @@ fragment_src = """
 in vec2 TexCoord;
 out vec4 FragColor;
 
-uniform int discard_clamp;
+#define BACKGROUND_MODE 0
+#define IMAGE_MODE 1
+
+uniform int render_mode;
 uniform sampler2D textureSampler;
 
 void main()
 {
-    if (discard_clamp == 1)
+    if (render_mode == BACKGROUND_MODE) {
+        float uv_x = (TexCoord.x - int(TexCoord.x)) - 0.5;
+        float uv_y = (TexCoord.y - int(TexCoord.y)) - 0.5;
+
+        if (uv_x * uv_y <= 0.0)
+            FragColor = vec4(0.5,0.5,0.5,1.0);
+        else
+            FragColor = vec4(1.0,1.0,1.0,1.0);
+    }
+    else if (render_mode == IMAGE_MODE) {
         if (TexCoord.x < 0.0 || TexCoord.x > 1.0 || TexCoord.y < 0.0 || TexCoord.y > 1.0)
             discard;
-    FragColor = texture(textureSampler, TexCoord);
+        FragColor = texture(textureSampler, TexCoord);
+    }
 }
 """
 
@@ -45,6 +58,7 @@ class ImageWidget(QOpenGLWidget):
         self.rectangle_width = 1.0
         self.rectangle_color = [1.0,0.0,0.0]
         self.rectangle = [0.0,0.0,-1.0,-1.0]
+        self.background_size = 64.0
 
     def updateVBO(self):
         glBindBuffer(GL_ARRAY_BUFFER, self.image_vbo)
@@ -100,25 +114,15 @@ class ImageWidget(QOpenGLWidget):
         glEnableVertexAttribArray(0)
         glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(8))
         glEnableVertexAttribArray(1)
-        
-        self.background_texture = glGenTextures(1)
-        glBindTexture(GL_TEXTURE_2D, self.background_texture)
-        background_img_data = [255,255,255,128,128,128,128,128,128,128,128,255,255,255,255]
-        background_img_data = np.array(background_img_data, dtype='uint8')
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 2, 2, 0, GL_RGB, GL_UNSIGNED_BYTE, background_img_data)
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
 
     def resizeGL(self, width, height):
         glViewport(0, 0, width, height)
 
         glBindBuffer(GL_ARRAY_BUFFER, self.backgound_vbo)
         vertices = [-1.0, -1.0, 0.0, 0.0,
-                    1.0,  -1.0, width / 32.0, 0.0,
-                    1.0,   1.0, width / 32.0, height / 32.0,
-                    -1.0,  1.0, 0.0, height / 32.0]
+                    1.0,  -1.0, width / self.background_size, 0.0,
+                    1.0,   1.0, width / self.background_size, height / self.background_size,
+                    -1.0,  1.0, 0.0, height / self.background_size]
         glBufferData(GL_ARRAY_BUFFER, 64, (GLfloat * len(vertices))(*vertices), GL_STATIC_DRAW)
 
     def drawBackground(self):
@@ -126,10 +130,7 @@ class ImageWidget(QOpenGLWidget):
 
         glBindVertexArray(self.backgound_vao)
 
-        glActiveTexture(GL_TEXTURE0)
-        glBindTexture(GL_TEXTURE_2D, self.background_texture)
-        glUniform1i(glGetUniformLocation(self.shader_program, "textureSampler"), 0)
-        glUniform1i(glGetUniformLocation(self.shader_program, "discard_clamp"), 0)
+        glUniform1i(glGetUniformLocation(self.shader_program, "render_mode"), 0)
 
         glDrawArrays(GL_TRIANGLE_FAN, 0, 4)
 
@@ -147,7 +148,7 @@ class ImageWidget(QOpenGLWidget):
         glActiveTexture(GL_TEXTURE0)
         glBindTexture(GL_TEXTURE_2D, self.image_texture)
         glUniform1i(glGetUniformLocation(self.shader_program, "textureSampler"), 0)
-        glUniform1i(glGetUniformLocation(self.shader_program, "discard_clamp"), 1)
+        glUniform1i(glGetUniformLocation(self.shader_program, "render_mode"), 1)
 
         glDrawArrays(GL_TRIANGLE_FAN, 0, 4)
 
