@@ -23,10 +23,14 @@ fragment_src = """
 in vec2 TexCoord;
 out vec4 FragColor;
 
+uniform int discard_clamp;
 uniform sampler2D textureSampler;
 
 void main()
 {
+    if (discard_clamp == 1)
+        if (TexCoord.x < 0.0 || TexCoord.x > 1.0 || TexCoord.y < 0.0 || TexCoord.y > 1.0)
+            discard;
     FragColor = texture(textureSampler, TexCoord);
 }
 """
@@ -43,7 +47,7 @@ class ImageWidget(QOpenGLWidget):
         self.rectangle = [0.0,0.0,-1.0,-1.0]
 
     def updateVBO(self):
-        glBindBuffer(GL_ARRAY_BUFFER, self.vbo)
+        glBindBuffer(GL_ARRAY_BUFFER, self.image_vbo)
         vertices = [-1.0, -1.0, self.render_area[0], self.render_area[3],
                     1.0,  -1.0, self.render_area[2], self.render_area[3],
                     1.0,   1.0, self.render_area[2], self.render_area[1],
@@ -58,7 +62,7 @@ class ImageWidget(QOpenGLWidget):
         if width == 0 or height == 0:
             return
         
-        glBindTexture(GL_TEXTURE_2D, self.texture)
+        glBindTexture(GL_TEXTURE_2D, self.image_texture)
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, self.img_data)
 
         self.img_data_changed = False
@@ -70,26 +74,64 @@ class ImageWidget(QOpenGLWidget):
         fragment_shader = compileShader(fragment_src, GL_FRAGMENT_SHADER)
         self.shader_program = compileProgram(vertex_shader, fragment_shader)
 
-        self.vbo = glGenBuffers(1)
+        self.image_vbo = glGenBuffers(1)
         self.updateVBO()
-        glBindBuffer(GL_ARRAY_BUFFER, self.vbo)
-        self.vao = glGenVertexArrays(1)
-        glBindVertexArray(self.vao)
+        glBindBuffer(GL_ARRAY_BUFFER, self.image_vbo)
+        self.image_vao = glGenVertexArrays(1)
+        glBindVertexArray(self.image_vao)
         glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(0))
         glEnableVertexAttribArray(0)
         glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(8))
         glEnableVertexAttribArray(1)
 
-        self.texture = glGenTextures(1)
+        self.image_texture = glGenTextures(1)
         self.updateTexture()
-        glBindTexture(GL_TEXTURE_2D, self.texture)
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+        glBindTexture(GL_TEXTURE_2D, self.image_texture)
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER)
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+
+        self.backgound_vbo = glGenBuffers(1)
+        glBindBuffer(GL_ARRAY_BUFFER, self.backgound_vbo)
+        self.backgound_vao = glGenVertexArrays(1)
+        glBindVertexArray(self.backgound_vao)
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(0))
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(8))
+        glEnableVertexAttribArray(1)
+        
+        self.background_texture = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, self.background_texture)
+        background_img_data = [255,255,255,128,128,128,128,128,128,128,128,255,255,255,255]
+        background_img_data = np.array(background_img_data, dtype='uint8')
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 2, 2, 0, GL_RGB, GL_UNSIGNED_BYTE, background_img_data)
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
 
     def resizeGL(self, width, height):
         glViewport(0, 0, width, height)
+
+        glBindBuffer(GL_ARRAY_BUFFER, self.backgound_vbo)
+        vertices = [-1.0, -1.0, 0.0, 0.0,
+                    1.0,  -1.0, width / 32.0, 0.0,
+                    1.0,   1.0, width / 32.0, height / 32.0,
+                    -1.0,  1.0, 0.0, height / 32.0]
+        glBufferData(GL_ARRAY_BUFFER, 64, (GLfloat * len(vertices))(*vertices), GL_STATIC_DRAW)
+
+    def drawBackground(self):
+        glUseProgram(self.shader_program)
+
+        glBindVertexArray(self.backgound_vao)
+
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self.background_texture)
+        glUniform1i(glGetUniformLocation(self.shader_program, "textureSampler"), 0)
+        glUniform1i(glGetUniformLocation(self.shader_program, "discard_clamp"), 0)
+
+        glDrawArrays(GL_TRIANGLE_FAN, 0, 4)
 
     def drawIamge(self):
         if self.render_area_changed:
@@ -100,11 +142,12 @@ class ImageWidget(QOpenGLWidget):
 
         glUseProgram(self.shader_program)
 
-        glBindVertexArray(self.vao)
+        glBindVertexArray(self.image_vao)
 
         glActiveTexture(GL_TEXTURE0)
-        glBindTexture(GL_TEXTURE_2D, self.texture)
+        glBindTexture(GL_TEXTURE_2D, self.image_texture)
         glUniform1i(glGetUniformLocation(self.shader_program, "textureSampler"), 0)
+        glUniform1i(glGetUniformLocation(self.shader_program, "discard_clamp"), 1)
 
         glDrawArrays(GL_TRIANGLE_FAN, 0, 4)
 
@@ -136,6 +179,10 @@ class ImageWidget(QOpenGLWidget):
     def paintGL(self):
         glClear(GL_COLOR_BUFFER_BIT)
 
+        glDisable(GL_DEPTH_TEST)
+        
+        self.drawBackground()
+
         self.drawIamge()
 
         self.drawRectangle()
@@ -146,7 +193,7 @@ class ImageWidget(QOpenGLWidget):
 
     # left top - right bottom
     def setRenderArea(self, x0, y0, x1, y1):
-        self.render_area = [x0, y0, x1, y1]
+        self.render_area = [x0, 1.0 - y1, x1, 1.0 - y0]
         self.render_area_changed = True
 
     # left bottom - right top
@@ -155,23 +202,23 @@ class ImageWidget(QOpenGLWidget):
         self.rectangle_color = [color_r, color_g, color_b]
         self.rectangle = [x0, y0, x1, y1]
 
-# import sys
-# import cv2
-# import numpy as np
-# from PyQt5 import QtGui
+import sys
+import cv2
+import numpy as np
+from PyQt5 import QtGui
 
-# if __name__ == '__main__':
-#     app = QApplication(sys.argv)
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
 
-#     widget = ImageWidget()
+    widget = ImageWidget()
 
-#     image = cv2.imread("D:/jdc/life/photos/sony_a7/_DSC0763.JPG")
-#     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-#     widget.setImageData(image_rgb)
-#     widget.setRenderArea(0.0,0.0,0.005,0.005)
-#     widget.setRectangle(0.0,0.0,0.5,0.5)
+    image = cv2.imread("D:/jdc/life/photos/sony_a7/_DSC0763.JPG")
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    widget.setImageData(image_rgb)
+    widget.setRenderArea(-0.1,-0.1,1.1,1.1)
+    widget.setRectangle(0.0,0.0,0.5,0.5)
 
-#     widget.resize(800, 600)
-#     widget.show()
+    widget.resize(800, 600)
+    widget.show()
 
-#     sys.exit(app.exec_())
+    sys.exit(app.exec_())
