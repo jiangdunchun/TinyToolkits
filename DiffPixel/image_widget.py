@@ -59,6 +59,7 @@ class ImageWidget(QOpenGLWidget):
         self.rectangle_color = [1.0,0.0,0.0]
         self.rectangle = [0.0,0.0,-1.0,-1.0]
         self.background_size = 64.0
+        self.enable_background = False
 
     def updateVBO(self):
         glBindBuffer(GL_ARRAY_BUFFER, self.image_vbo)
@@ -182,17 +183,21 @@ class ImageWidget(QOpenGLWidget):
 
         glDisable(GL_DEPTH_TEST)
         
-        self.drawBackground()
+        if self.enable_background:
+            self.drawBackground()
 
         self.drawIamge()
 
         self.drawRectangle()
 
+    def enableBackground(self):
+        self.enable_background = True
+
     def setImageData(self, img_data):
         self.img_data = img_data
         self.img_data_changed = True
 
-    # left top - right bottom
+    # left bottom - right top
     def setRenderArea(self, x0, y0, x1, y1):
         self.render_area = [x0, 1.0 - y1, x1, 1.0 - y0]
         self.render_area_changed = True
@@ -215,9 +220,10 @@ if __name__ == '__main__':
 
     image = cv2.imread("D:/jdc/life/photos/sony_a7/_DSC0763.JPG")
     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    #widget.enableBackground()
     widget.setImageData(image_rgb)
-    widget.setRenderArea(-0.1,-0.1,1.1,1.1)
-    widget.setRectangle(0.0,0.0,0.5,0.5)
+    widget.setRenderArea(-0.2,-0.2,1.1,1.1)
+    widget.setRectangle(0.0,0.0,0.5,0.5,1.0,0.0,0.0,3)
 
     widget.resize(800, 600)
     widget.show()
