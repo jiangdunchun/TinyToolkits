@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import QApplication, QOpenGLWidget
 from OpenGL.GL import *
 from OpenGL.GL.shaders import compileShader, compileProgram
+from PyQt5.QtGui import QWheelEvent, QMouseEvent
 
 vertex_src = """
 #version 330 core
@@ -194,8 +195,26 @@ class ImageWidget(QOpenGLWidget):
         self.enable_background = True
 
     def setImageData(self, img_data):
+        
+
+        width = img_data.shape[1]
+        height = img_data.shape[0]
+        if width == 0 or height == 0:
+            return
+        
+        widget_size = self.size()
+
+        self.pixel_size = max(float(width) / widget_size.width(), float(height) / widget_size.height())
+
+        width_len =  widget_size.width() * self.pixel_size / width
+        height_len =  widget_size.height() * self.pixel_size / height
+
+        self.setRenderArea(0.5 - width_len / 2, 0.5 - height_len / 2, 0.5 + width_len / 2, 0.5 + height_len / 2)
+
         self.img_data = img_data
         self.img_data_changed = True
+
+        
 
     # left bottom - right top
     def setRenderArea(self, x0, y0, x1, y1):
@@ -208,6 +227,54 @@ class ImageWidget(QOpenGLWidget):
         self.rectangle_color = [color_r, color_g, color_b]
         self.rectangle = [x0, y0, x1, y1]
 
+    def wheelEvent(self, event: QWheelEvent):
+        delta = event.angleDelta().y()
+
+        width = self.img_data.shape[1]
+        height = self.img_data.shape[0]
+        if width == 0 or height == 0:
+            return
+        
+        widget_size = self.size()
+
+
+        self.pixel_size = self.pixel_size * (1.1 if delta > 0 else 1 / 1.1)
+
+        width_len =  widget_size.width() * self.pixel_size / width
+        height_len =  widget_size.height() * self.pixel_size / height
+
+        self.setRenderArea(0.5 - width_len / 2, 0.5 - height_len / 2, 0.5 + width_len / 2, 0.5 + height_len / 2)
+
+        self.repaint()
+
+    def mousePressEvent(self, event: QMouseEvent):
+        self.press_x = event.x()
+        self.press_y = event.y()
+        print("xxxx")
+
+    def mouseMoveEvent(self, event: QMouseEvent):
+        width = self.img_data.shape[1]
+        height = self.img_data.shape[0]
+        if width == 0 or height == 0:
+            return
+        
+        delta_x = event.x() - self.press_x
+        delta_y = event.y() - self.press_y
+
+        #print(delta_x, delta_y)
+
+        delta_x = -delta_x * self.pixel_size / width
+        delta_y = -delta_y * self.pixel_size / height
+
+        # print(delta_x, delta_y)
+
+        self.setRenderArea(self.render_area[0] + delta_x, 1 - self.render_area[3] - delta_y, self.render_area[2] + delta_x, 1 - self.render_area[1] - delta_y)
+
+        self.press_x = event.x()
+        self.press_y = event.y()
+
+        self.repaint()
+        
 import sys
 import cv2
 import numpy as np
@@ -220,10 +287,10 @@ if __name__ == '__main__':
 
     image = cv2.imread("D:/jdc/life/photos/sony_a7/_DSC0763.JPG")
     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    #widget.enableBackground()
+    widget.enableBackground()
     widget.setImageData(image_rgb)
-    widget.setRenderArea(-0.2,-0.2,1.1,1.1)
-    widget.setRectangle(0.0,0.0,0.5,0.5,1.0,0.0,0.0,3)
+    # widget.setRenderArea(0.0,-0.1,1.0,1.1)
+    # widget.setRectangle(0.0,0.0,0.5,0.5,1.0,0.0,0.0,3)
 
     widget.resize(800, 600)
     widget.show()
