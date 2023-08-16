@@ -2,8 +2,9 @@ from PyQt5.QtWidgets import QApplication, QOpenGLWidget
 from OpenGL.GL import *
 from OpenGL.GL.shaders import compileShader, compileProgram
 from PyQt5.QtGui import QWheelEvent, QMouseEvent
+from PyQt5.QtCore import Qt
 
-vertex_src = """
+vert_src = """
 #version 330 core
 
 layout (location = 0) in vec2 position;
@@ -18,260 +19,163 @@ void main()
 }
 """
 
-fragment_src = """
+frag_background_src = """
 #version 330 core
 
 in vec2 TexCoord;
 out vec4 FragColor;
 
-#define BACKGROUND_MODE 0
-#define IMAGE_MODE 1
+void main()
+{
+    float uv_x = (TexCoord.x - int(TexCoord.x)) - 0.5;
+    float uv_y = (TexCoord.y - int(TexCoord.y)) - 0.5;
 
-uniform int render_mode;
+    if (uv_x * uv_y <= 0.0)
+        FragColor = vec4(0.5,0.5,0.5,1.0);
+    else
+        FragColor = vec4(1.0,1.0,1.0,1.0);
+
+}
+"""
+
+frag_img_src = """
+#version 330 core
+
+in vec2 TexCoord;
+out vec4 FragColor;
+
 uniform sampler2D textureSampler;
 
 void main()
 {
-    if (render_mode == BACKGROUND_MODE) {
-        float uv_x = (TexCoord.x - int(TexCoord.x)) - 0.5;
-        float uv_y = (TexCoord.y - int(TexCoord.y)) - 0.5;
-
-        if (uv_x * uv_y <= 0.0)
-            FragColor = vec4(0.5,0.5,0.5,1.0);
-        else
-            FragColor = vec4(1.0,1.0,1.0,1.0);
-    }
-    else if (render_mode == IMAGE_MODE) {
-        if (TexCoord.x < 0.0 || TexCoord.x > 1.0 || TexCoord.y < 0.0 || TexCoord.y > 1.0)
-            discard;
-        FragColor = texture(textureSampler, TexCoord);
-    }
+    if (TexCoord.x < 0.0 || TexCoord.x > 1.0 || TexCoord.y < 0.0 || TexCoord.y > 1.0)
+        discard;
+    FragColor = texture(textureSampler, TexCoord);
 }
 """
 
 class ImageWidget(QOpenGLWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, img_data=[[]]):
         super(ImageWidget, self).__init__(parent)
-        self.img_data = [[]]
-        self.img_data_changed = False
-        self.render_area = [0.0,0.0,1.0,1.0]
-        self.render_area_changed = False
-        self.rectangle_width = 1.0
-        self.rectangle_color = [1.0,0.0,0.0]
-        self.rectangle = [0.0,0.0,-1.0,-1.0]
-        self.background_size = 64.0
-        self.enable_background = False
+        self.background_enabled = True
+        self.background_size = 64
+        self.background_pass_shader = None
+        self.background_pass_position = np.array([[-1.0,-1.0],[1.0,-1.0],[1.0,1.0],[-1.0,1.0]])
+        self.background_pass_texCoord = np.array([[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0]])
 
-    def updateVBO(self):
-        glBindBuffer(GL_ARRAY_BUFFER, self.image_vbo)
-        vertices = [-1.0, -1.0, self.render_area[0], self.render_area[3],
-                    1.0,  -1.0, self.render_area[2], self.render_area[3],
-                    1.0,   1.0, self.render_area[2], self.render_area[1],
-                    -1.0,  1.0, self.render_area[0], self.render_area[1]]
-        glBufferData(GL_ARRAY_BUFFER, 64, (GLfloat * len(vertices))(*vertices), GL_STATIC_DRAW)
-
-        self.render_area_changed = False
-    
-    def updateTexture(self):
-        width = self.img_data.shape[1]
-        height = self.img_data.shape[0]
-        if width == 0 or height == 0:
-            return
+        self.img_data = img_data
+        self.img_pass_shader = None
+        self.img_texture = None
+        self.img_pass_position = np.array([[-1.0,-1.0],[1.0,-1.0],[1.0,1.0],[-1.0,1.0]])
+        self.img_pass_texCoord = np.array([[0.0,1.0],[1.0,1.0],[1.0,0.0],[0.0,0.0]])
         
-        glBindTexture(GL_TEXTURE_2D, self.image_texture)
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, self.img_data)
-
-        self.img_data_changed = False
-
     def initializeGL(self):
         glClearColor(0.0, 0.0, 0.0, 1.0)
 
-        vertex_shader = compileShader(vertex_src, GL_VERTEX_SHADER)
-        fragment_shader = compileShader(fragment_src, GL_FRAGMENT_SHADER)
-        self.shader_program = compileProgram(vertex_shader, fragment_shader)
+        vert_background_shader = compileShader(vert_src, GL_VERTEX_SHADER)
+        frag_background_shader = compileShader(frag_background_src, GL_FRAGMENT_SHADER)
+        self.background_pass_shader = compileProgram(vert_background_shader, frag_background_shader)
 
-        self.image_vbo = glGenBuffers(1)
-        self.updateVBO()
-        glBindBuffer(GL_ARRAY_BUFFER, self.image_vbo)
-        self.image_vao = glGenVertexArrays(1)
-        glBindVertexArray(self.image_vao)
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(0))
-        glEnableVertexAttribArray(0)
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(8))
-        glEnableVertexAttribArray(1)
+        vert_img_shader = compileShader(vert_src, GL_VERTEX_SHADER)
+        frag_img_shader = compileShader(frag_img_src, GL_FRAGMENT_SHADER)
+        self.img_pass_shader = compileProgram(vert_img_shader, frag_img_shader)
 
-        self.image_texture = glGenTextures(1)
-        self.updateTexture()
-        glBindTexture(GL_TEXTURE_2D, self.image_texture)
+        self.img_texture = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, self.img_texture)
         glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER)
         glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
-
-        self.backgound_vbo = glGenBuffers(1)
-        glBindBuffer(GL_ARRAY_BUFFER, self.backgound_vbo)
-        self.backgound_vao = glGenVertexArrays(1)
-        glBindVertexArray(self.backgound_vao)
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(0))
-        glEnableVertexAttribArray(0)
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(8))
-        glEnableVertexAttribArray(1)
+        width = self.img_data.shape[1]
+        height = self.img_data.shape[0]
+        if width == 0 or height == 0:
+            return
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, self.img_data)
 
     def resizeGL(self, width, height):
         glViewport(0, 0, width, height)
 
-        glBindBuffer(GL_ARRAY_BUFFER, self.backgound_vbo)
-        vertices = [-1.0, -1.0, 0.0, 0.0,
-                    1.0,  -1.0, width / self.background_size, 0.0,
-                    1.0,   1.0, width / self.background_size, height / self.background_size,
-                    -1.0,  1.0, 0.0, height / self.background_size]
-        glBufferData(GL_ARRAY_BUFFER, 64, (GLfloat * len(vertices))(*vertices), GL_STATIC_DRAW)
+        img_width = self.img_data.shape[1]
+        img_height = self.img_data.shape[0]
+
+        pixel_size = max(float(img_width) / width, float(img_height) / height)
+
+        width_len = float(img_width) / (width * pixel_size)
+        height_len = float(img_height) / (height * pixel_size)
+
+        self.img_pass_position = np.array([[-width_len,-height_len],[width_len,-height_len],[width_len,height_len],[-width_len,height_len]])
 
     def drawBackground(self):
-        glUseProgram(self.shader_program)
+        uv_x_max = self.size().width() / self.background_size
+        uv_y_max = self.size().height() / self.background_size
 
-        glBindVertexArray(self.backgound_vao)
+        self.background_pass_texCoord[1][0] = uv_x_max
+        self.background_pass_texCoord[2][0] = uv_x_max
+        self.background_pass_texCoord[2][1] = uv_y_max
+        self.background_pass_texCoord[3][1] = uv_y_max
 
-        glUniform1i(glGetUniformLocation(self.shader_program, "render_mode"), 0)
+        glUseProgram(self.background_pass_shader)
+
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, self.background_pass_position)
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, self.background_pass_texCoord)
+        glEnableVertexAttribArray(1)
 
         glDrawArrays(GL_TRIANGLE_FAN, 0, 4)
 
     def drawIamge(self):
-        if self.render_area_changed:
-            self.updateVBO()
-    
-        if self.img_data_changed:
-            self.updateTexture()
-
-        glUseProgram(self.shader_program)
-
-        glBindVertexArray(self.image_vao)
+        glUseProgram(self.img_pass_shader)
 
         glActiveTexture(GL_TEXTURE0)
-        glBindTexture(GL_TEXTURE_2D, self.image_texture)
-        glUniform1i(glGetUniformLocation(self.shader_program, "textureSampler"), 0)
-        glUniform1i(glGetUniformLocation(self.shader_program, "render_mode"), 1)
+        glBindTexture(GL_TEXTURE_2D, self.img_texture)
+        glUniform1i(glGetUniformLocation(self.img_pass_shader, "textureSampler"), 0)
+
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, self.img_pass_position)
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, self.img_pass_texCoord)
+        glEnableVertexAttribArray(1)
 
         glDrawArrays(GL_TRIANGLE_FAN, 0, 4)
-
-    def drawRectangle(self):
-        if self.rectangle[2] < self.rectangle[0]:
-            return
-        
-        glUseProgram(0)
-
-        glEnable(GL_LINE_SMOOTH)
-        glLineWidth(self.rectangle_width)
-        glColor3f(self.rectangle_color[0], self.rectangle_color[1], self.rectangle_color[2])
-        glEnable(GL_LINE_STIPPLE)
-
-        glBegin(GL_LINES)
-        glVertex2f(self.rectangle[0] * 2 - 1, self.rectangle[1] * 2 - 1)
-        glVertex2f(self.rectangle[0] * 2 - 1, self.rectangle[3] * 2 - 1)
-        
-        glVertex2f(self.rectangle[0] * 2 - 1, self.rectangle[3] * 2 - 1)
-        glVertex2f(self.rectangle[2] * 2 - 1, self.rectangle[3] * 2 - 1)
-
-        glVertex2f(self.rectangle[2] * 2 - 1, self.rectangle[3] * 2 - 1)
-        glVertex2f(self.rectangle[2] * 2 - 1, self.rectangle[1] * 2 - 1)
-
-        glVertex2f(self.rectangle[2] * 2 - 1, self.rectangle[1] * 2 - 1)
-        glVertex2f(self.rectangle[0] * 2 - 1, self.rectangle[1] * 2 - 1)
-        glEnd()
 
     def paintGL(self):
         glClear(GL_COLOR_BUFFER_BIT)
 
         glDisable(GL_DEPTH_TEST)
         
-        if self.enable_background:
+        if self.background_enabled:
             self.drawBackground()
 
         self.drawIamge()
 
-        self.drawRectangle()
-
-    def enableBackground(self):
-        self.enable_background = True
-
-    def setImageData(self, img_data):
-        
-
-        width = img_data.shape[1]
-        height = img_data.shape[0]
-        if width == 0 or height == 0:
-            return
-        
-        widget_size = self.size()
-
-        self.pixel_size = max(float(width) / widget_size.width(), float(height) / widget_size.height())
-
-        width_len =  widget_size.width() * self.pixel_size / width
-        height_len =  widget_size.height() * self.pixel_size / height
-
-        self.setRenderArea(0.5 - width_len / 2, 0.5 - height_len / 2, 0.5 + width_len / 2, 0.5 + height_len / 2)
-
-        self.img_data = img_data
-        self.img_data_changed = True
-
-        
-
-    # left bottom - right top
-    def setRenderArea(self, x0, y0, x1, y1):
-        self.render_area = [x0, 1.0 - y1, x1, 1.0 - y0]
-        self.render_area_changed = True
-
-    # left bottom - right top
-    def setRectangle(self, x0, y0, x1, y1, color_r=1.0, color_g=0.0, color_b=0.0, width=1.0):
-        self.rectangle_width = width
-        self.rectangle_color = [color_r, color_g, color_b]
-        self.rectangle = [x0, y0, x1, y1]
-
     def wheelEvent(self, event: QWheelEvent):
-        delta = event.angleDelta().y()
+        ratio = 1.1 if event.angleDelta().y() > 0 else 1 / 1.1
 
-        width = self.img_data.shape[1]
-        height = self.img_data.shape[0]
-        if width == 0 or height == 0:
-            return
-        
-        widget_size = self.size()
-
-
-        self.pixel_size = self.pixel_size * (1.1 if delta > 0 else 1 / 1.1)
-
-        width_len =  widget_size.width() * self.pixel_size / width
-        height_len =  widget_size.height() * self.pixel_size / height
-
-        self.setRenderArea(0.5 - width_len / 2, 0.5 - height_len / 2, 0.5 + width_len / 2, 0.5 + height_len / 2)
+        press_pixel_lb = np.array([event.x(), self.size().height()-event.y()],dtype=float)
+        screen_size = np.array([self.size().width(), self.size().height()],dtype=float)
+        press_uv = 2 * press_pixel_lb / screen_size + np.array([-1,-1],dtype=float)
+        for i in range(0, 4):
+            self.img_pass_position[i] = ratio * (self.img_pass_position[i] - press_uv) + press_uv
 
         self.repaint()
 
     def mousePressEvent(self, event: QMouseEvent):
-        self.press_x = event.x()
-        self.press_y = event.y()
-        print("xxxx")
+        self.button = event.button()
+        self.last_press_pixel = np.array([event.x(), event.y()],dtype=float)
+    
+    def mouseReleaseEvent(self, event: QMouseEvent):
+        self.button = Qt.MouseButton.NoButton
+        self.last_press_pixel = np.array([-1,-1],dtype=float)
 
     def mouseMoveEvent(self, event: QMouseEvent):
-        width = self.img_data.shape[1]
-        height = self.img_data.shape[0]
-        if width == 0 or height == 0:
-            return
-        
-        delta_x = event.x() - self.press_x
-        delta_y = event.y() - self.press_y
+        now_press_pixel = np.array([event.x(), event.y()],dtype=float)
+        pixel_move = now_press_pixel - self.last_press_pixel
+        self.last_press_pixel = now_press_pixel
 
-        #print(delta_x, delta_y)
-
-        delta_x = -delta_x * self.pixel_size / width
-        delta_y = -delta_y * self.pixel_size / height
-
-        # print(delta_x, delta_y)
-
-        self.setRenderArea(self.render_area[0] + delta_x, 1 - self.render_area[3] - delta_y, self.render_area[2] + delta_x, 1 - self.render_area[1] - delta_y)
-
-        self.press_x = event.x()
-        self.press_y = event.y()
+        if self.button == Qt.MouseButton.LeftButton:
+            pixel_move[1] = -1 * pixel_move[1]
+            screen_size = np.array([self.size().width(), self.size().height()],dtype=float)
+            uv_move = 2 * pixel_move / screen_size
+            self.img_pass_position = self.img_pass_position + uv_move
 
         self.repaint()
         
@@ -283,14 +187,9 @@ from PyQt5 import QtGui
 if __name__ == '__main__':
     app = QApplication(sys.argv)
 
-    widget = ImageWidget()
-
     image = cv2.imread("D:/jdc/life/photos/sony_a7/_DSC0763.JPG")
     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    widget.enableBackground()
-    widget.setImageData(image_rgb)
-    # widget.setRenderArea(0.0,-0.1,1.0,1.1)
-    # widget.setRectangle(0.0,0.0,0.5,0.5,1.0,0.0,0.0,3)
+    widget = ImageWidget(None, image_rgb)
 
     widget.resize(800, 600)
     widget.show()
