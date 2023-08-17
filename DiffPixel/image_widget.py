@@ -3,6 +3,8 @@ from OpenGL.GL import *
 from OpenGL.GL.shaders import compileShader, compileProgram
 from PyQt5.QtGui import QWheelEvent, QMouseEvent
 from PyQt5.QtCore import Qt
+from PyQt5.QtCore import *
+import numpy as np
 
 vert_src = """
 #version 330 core
@@ -55,6 +57,7 @@ void main()
 """
 
 class ImageWidget(QOpenGLWidget):
+    renderAreaChangedSignal = pyqtSignal(float, float, float, float)
     def __init__(self, parent=None, img_data=[[]]):
         super(ImageWidget, self).__init__(parent)
         self.background_enabled = True
@@ -139,7 +142,6 @@ class ImageWidget(QOpenGLWidget):
 
     def paintGL(self):
         glClear(GL_COLOR_BUFFER_BIT)
-
         glDisable(GL_DEPTH_TEST)
         
         if self.background_enabled:
@@ -153,14 +155,28 @@ class ImageWidget(QOpenGLWidget):
         press_pixel_lb = np.array([event.x(), self.size().height()-event.y()],dtype=float)
         screen_size = np.array([self.size().width(), self.size().height()],dtype=float)
         press_uv = 2 * press_pixel_lb / screen_size + np.array([-1,-1],dtype=float)
-        for i in range(0, 4):
-            self.img_pass_position[i] = ratio * (self.img_pass_position[i] - press_uv) + press_uv
+        render_area = ratio * (self.img_pass_position - press_uv) + press_uv
 
-        self.repaint()
+        self.renderAreaChangedSignal.emit(render_area[0][0], render_area[0][1], render_area[2][0], render_area[2][1])
+        self.renderAreaChanged(render_area[0][0], render_area[0][1], render_area[2][0], render_area[2][1])
 
     def mousePressEvent(self, event: QMouseEvent):
         self.button = event.button()
         self.last_press_pixel = np.array([event.x(), event.y()],dtype=float)
+
+        if self.button == Qt.MouseButton.RightButton:
+            screen_size = np.array([self.size().width(), self.size().height()],dtype=float)
+            press_pos = 2 * self.last_press_pixel / screen_size - np.array([1,1],dtype=float)
+            press_pos[1] = -press_pos[1]
+            press_uv = (press_pos - self.img_pass_position[0]) / (self.img_pass_position[2] - self.img_pass_position[0])
+            press_uv[1] = 1.0 - press_uv[1]
+            if press_uv[0] >= 0.0 and press_uv[0] <= 1.0 and press_uv[1] >= 0.0 and press_uv[1] <= 1.0:
+                width = self.img_data.shape[1]
+                height = self.img_data.shape[0]
+                img_size = np.array([width,height],dtype=float)
+                press_tex = press_uv * img_size
+                print(self.img_data[int(press_tex[1])][int(press_tex[0])])
+
     
     def mouseReleaseEvent(self, event: QMouseEvent):
         self.button = Qt.MouseButton.NoButton
@@ -175,23 +191,28 @@ class ImageWidget(QOpenGLWidget):
             pixel_move[1] = -1 * pixel_move[1]
             screen_size = np.array([self.size().width(), self.size().height()],dtype=float)
             uv_move = 2 * pixel_move / screen_size
-            self.img_pass_position = self.img_pass_position + uv_move
+            render_area = self.img_pass_position + uv_move
 
+            self.renderAreaChangedSignal.emit(render_area[0][0], render_area[0][1], render_area[2][0], render_area[2][1])
+            self.renderAreaChanged(render_area[0][0], render_area[0][1], render_area[2][0], render_area[2][1])
+    
+    def renderAreaChanged(self, x0, y0, x1, y1):
+        self.img_pass_position = np.array([[x0,y0],[x1,y0],[x1,y1],[x0,y1]])
         self.repaint()
-        
-import sys
-import cv2
-import numpy as np
-from PyQt5 import QtGui
 
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
+# import sys
+# import cv2
+# import numpy as np
+# from PyQt5 import QtGui
 
-    image = cv2.imread("D:/jdc/life/photos/sony_a7/_DSC0763.JPG")
-    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    widget = ImageWidget(None, image_rgb)
+# if __name__ == '__main__':
+#     app = QApplication(sys.argv)
 
-    widget.resize(800, 600)
-    widget.show()
+#     image = cv2.imread("D:/jdc/life/photos/sony_a7/_DSC0763.JPG")
+#     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+#     widget = ImageWidget(None, image_rgb)
 
-    sys.exit(app.exec_())
+#     widget.resize(800, 600)
+#     widget.show()
+
+#     sys.exit(app.exec_())
