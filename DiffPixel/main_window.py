@@ -54,7 +54,7 @@ class Ui_MainForm(object):
         self.Save.setObjectName("Save")
         self.horizontalLayout_2.addWidget(self.Save)
 
-        image = cv2.imread("D:/jdc/life/photos/sony_a7/_DSC0763.JPG")
+        image = cv2.imread("./asset/_DSC0763.JPG")
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         self.OriginalImage = image_widget.ImageWidget(self.OriginalWidget, image_rgb)
