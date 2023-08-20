@@ -43,7 +43,8 @@ if __name__ == '__main__':
 
     app = QApplication(sys.argv)
 
-    widget = OpenPathWidget(None, False, 'Image Files (*.jpg *.gif *.png *.jpeg)')
+    widget = OpenPathWidget(None, False, 'txt(*.txt);;png(*.png)')
+    #widget = OpenPathWidget(None, False, 'Image Files(*.jpg *.gif *.png *.jpeg)')
 
     widget.resize(800, 600)
     widget.show()
