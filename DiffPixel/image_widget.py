@@ -1,9 +1,8 @@
-from PyQt5.QtWidgets import QApplication, QOpenGLWidget
 from OpenGL.GL import *
-from OpenGL.GL.shaders import compileShader, compileProgram
-from PyQt5.QtGui import QWheelEvent, QMouseEvent
-from PyQt5.QtCore import Qt
+from OpenGL.GL.shaders import *
 from PyQt5.QtCore import *
+from PyQt5.QtWidgets import *
+from PyQt5.QtGui import *
 import numpy as np
 
 debug_print = False
@@ -232,8 +231,6 @@ class ImageWidget(QOpenGLWidget):
 
 import sys
 import cv2
-import numpy as np
-from PyQt5 import QtGui
 
 if __name__ == '__main__':
     debug_print = True
