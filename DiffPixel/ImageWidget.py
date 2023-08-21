@@ -61,7 +61,7 @@ class ImageWidget(QOpenGLWidget):
     renderAreaChangedSignal = pyqtSignal(float, float, float, float)
     pixelSelectedSignal = pyqtSignal(int, int)
 
-    def __init__(self, parent=None, img_data=[[]]):
+    def __init__(self, parent=None, img_data=np.array([[]])):
         super(ImageWidget, self).__init__(parent)
         self.bg_enabled = True
         self.bg_size = 64
@@ -192,7 +192,6 @@ class ImageWidget(QOpenGLWidget):
                 height = self.img_data.shape[0]
                 img_size = np.array([width,height],dtype=float)
                 press_tex = selected_uv * img_size
-                select_color = self.img_data[int(press_tex[1])][int(press_tex[0])]
 
                 if debug_print:
                     print("pixelSelectedSignal:", int(press_tex[1]), int(press_tex[0]))

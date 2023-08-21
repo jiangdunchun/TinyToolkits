@@ -11,7 +11,7 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QVBoxLayout, QSizePolicy
 
-import image_widget
+import ImageWidget
 import cv2
 
 class Ui_MainForm(object):
@@ -57,19 +57,19 @@ class Ui_MainForm(object):
         image = cv2.imread("./test/original/1.png")
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        self.OriginalImage = image_widget.ImageWidget(self.OriginalWidget, image_rgb)
+        self.OriginalImage = ImageWidget.ImageWidget(self.OriginalWidget, image_rgb)
         self.OriginalImage.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         OriginalLayout = QVBoxLayout()
         OriginalLayout.addWidget(self.OriginalImage)
         self.OriginalWidget.setLayout(OriginalLayout)
 
-        self.ComparedImage = image_widget.ImageWidget(self.ComparedWidget, image_rgb)
+        self.ComparedImage = ImageWidget.ImageWidget(self.ComparedWidget, image_rgb)
         self.ComparedImage.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         ComparedLayout = QVBoxLayout()
         ComparedLayout.addWidget(self.ComparedImage)
         self.ComparedWidget.setLayout(ComparedLayout)
 
-        self.ResultImage = image_widget.ImageWidget(self.ResultWidget, image_rgb)
+        self.ResultImage = ImageWidget.ImageWidget(self.ResultWidget, image_rgb)
         self.ResultImage.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         ResultLayout = QVBoxLayout()
         ResultLayout.addWidget(self.ResultImage)
