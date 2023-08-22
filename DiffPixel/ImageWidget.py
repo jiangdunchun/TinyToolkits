@@ -96,7 +96,10 @@ class ImageWidget(QOpenGLWidget):
         img_height = self.img_data.shape[0]
         if img_width == 0 or img_height == 0:
             return
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, img_width, img_height, 0, GL_RGB, GL_UNSIGNED_BYTE, self.img_data)
+        if len(self.img_data.shape) == 3:
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, img_width, img_height, 0, GL_RGB, GL_UNSIGNED_BYTE, self.img_data)
+        if len(self.img_data.shape) == 2:
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, img_width, img_height, 0, GL_RED, GL_FLOAT, self.img_data)
 
     def resizeGL(self, canvas_width, canvas_height):
         img_width = self.img_data.shape[1]

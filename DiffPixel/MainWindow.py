@@ -6,9 +6,10 @@ from OpenPathWidget import *
 import cv2
     
 class MainWindow(QWidget):  
-    def __init__(self):  
+    def __init__(self, diff_functions):  
         super().__init__()
         self.setWindowTitle("DiffPixel")
+        self.diff_functions = diff_functions
 
         self.original_img_widget = None
         self.modified_img_widget = None
@@ -33,8 +34,9 @@ class MainWindow(QWidget):
         setting_hbox = QHBoxLayout()
         main_vbox.addLayout(setting_hbox,0)
 
-        diff_func_combo_box = QComboBox()
-        setting_hbox.addWidget(diff_func_combo_box,0)
+        self.diff_func_combo_box = QComboBox()
+        self.diff_func_combo_box.addItems(self.diff_functions.keys())
+        setting_hbox.addWidget(self.diff_func_combo_box,0)
 
         setting_h_spacer = QSpacerItem(700,13,QSizePolicy.Expanding,QSizePolicy.Minimum)
         setting_hbox.addItem(setting_h_spacer)
@@ -72,8 +74,11 @@ class MainWindow(QWidget):
 
     def diff(self):
         if  self.original_img_widget != None and self.modified_img_widget != None:
-            diff_data = self.modified_img_data - self.original_img_data
-            diff_data = diff_data * diff_data
+
+            diff_func = self.diff_functions[self.diff_func_combo_box.currentText()]
+            diff_data = diff_func(self.original_img_data, self.modified_img_data)
+            diff_data = diff_data / diff_data.max()
+
 
             rst_widget = self.image_hbox.itemAt(2)
             self.image_hbox.removeItem(rst_widget)
@@ -98,8 +103,13 @@ import sys
 from qt_material import apply_stylesheet
 
 if __name__ == "__main__":  
+    DiffFunctions = {}
+    with open('DiffFunctions.py', 'r') as diff_functions_file:
+        diff_functions_code = diff_functions_file.read()
+    exec(diff_functions_code)
+
     app = QApplication(sys.argv)  
     apply_stylesheet(app, theme='dark_teal.xml')
-    win = MainWindow()  
+    win = MainWindow(DiffFunctions)  
     win.show()  
     sys.exit(app.exec_())
