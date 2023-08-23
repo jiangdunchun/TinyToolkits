@@ -229,6 +229,30 @@ class ImageWidget(QOpenGLWidget):
         self.img_pass_position = np.array([[x0,y0],[x1,y0],[x1,y1],[x0,y1]])
         self.repaint()
 
+    # shape=[width,height,3],dtype='uint8'
+    def SetImgData(self, img_data=np.empty([0,0,3],dtype='uint8')):
+        self.img_data = img_data
+        self.has_img_data = True
+        if img_data.shape[0] == 0 or img_data.shape[1] == 0:
+            self.has_img_data = False
+        self.repaint()
+
+    # shape=[width,height],dtype='float'
+    def SetDiffData(self, diff_data=np.empty([0,0],dtype='float')):
+        self.img_data = diff_data
+        self.has_diff_data = True
+        if diff_data.shape[0] == 0 or diff_data.shape[1] == 0:
+            self.has_diff_data = False
+        self.repaint()
+    
+    def SetDiffDataRange(self, lower, upper):
+        self.diff_data_range = np.array([0,1],dtype='float')
+        if self.has_diff_data:
+            self.repaint()
+
+    def SetRenderArea(self, x0, y0, x1, y1):
+        self.img_pass_position = np.array([[x0,y0],[x1,y0],[x1,y1],[x0,y1]])
+        self.repaint()
 
 
 import sys

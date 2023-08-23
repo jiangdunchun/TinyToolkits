@@ -110,6 +110,7 @@ if __name__ == "__main__":
 
     app = QApplication(sys.argv)  
     apply_stylesheet(app, theme='dark_teal.xml')
-    win = MainWindow(DiffFunctions)  
-    win.show()  
+    window = MainWindow(DiffFunctions)
+    window.showMaximized()
+    window.show()  
     sys.exit(app.exec_())
