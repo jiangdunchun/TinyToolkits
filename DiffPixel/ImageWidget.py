@@ -51,8 +51,6 @@ uniform sampler2D textureSampler;
 
 void main()
 {
-    if (TexCoord.x < 0.0 || TexCoord.x > 1.0 || TexCoord.y < 0.0 || TexCoord.y > 1.0)
-        discard;
     FragColor = texture(textureSampler, TexCoord);
 }
 """
@@ -253,7 +251,6 @@ class ImageWidget(QOpenGLWidget):
     def SetRenderArea(self, x0, y0, x1, y1):
         self.img_pass_position = np.array([[x0,y0],[x1,y0],[x1,y1],[x0,y1]])
         self.repaint()
-
 
 import sys
 import cv2
