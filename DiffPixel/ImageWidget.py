@@ -198,8 +198,6 @@ class ImageWidget(QOpenGLWidget):
                     print("pixelSelectedSignal:", int(press_tex[1]), int(press_tex[0]))
                 self.pixelSelectedSignal.emit(int(press_tex[1]), int(press_tex[0]))
 
-                
-    
     def mouseReleaseEvent(self, event: QMouseEvent):
         self.button = Qt.MouseButton.NoButton
         self.last_press_pixel = np.array([-1,-1],dtype=float)
