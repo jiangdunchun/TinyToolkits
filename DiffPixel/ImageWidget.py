@@ -4,10 +4,11 @@ from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 import numpy as np
+import cv2
 
 debug_print = False
 
-vert_src = """
+vert_src = '''
 #version 330 core
 
 layout (location = 0) in vec2 position;
@@ -20,9 +21,21 @@ void main()
     gl_Position = vec4(position, 0.0, 1.0);
     TexCoord = texCoord;
 }
-"""
+'''
+frag_null_src = '''
+#version 330 core
 
-frag_bg_src = """
+in vec2 TexCoord;
+out vec4 FragColor;
+
+uniform sampler2D NUllTexture;
+
+void main()
+{
+    FragColor = texture(NUllTexture, TexCoord);
+}
+'''
+frag_bg_src = '''
 #version 330 core
 
 in vec2 TexCoord;
@@ -34,55 +47,90 @@ void main()
     float uv_y = (TexCoord.y - int(TexCoord.y)) - 0.5;
 
     if (uv_x * uv_y <= 0.0)
-        FragColor = vec4(0.5,0.5,0.5,1.0);
+        FragColor = vec4(0.25,0.25,0.25,1.0);
     else
-        FragColor = vec4(1.0,1.0,1.0,1.0);
+        FragColor = vec4(0.75,0.75,0.75,1.0);
 
 }
-"""
-
-frag_img_src = """
+'''
+frag_img_src = '''
 #version 330 core
 
 in vec2 TexCoord;
 out vec4 FragColor;
 
-uniform sampler2D textureSampler;
+uniform sampler2D ImgTexture;
+uniform bool IsDiff;
+uniform float DiffMax;
+uniform float DiffMin;
 
 void main()
 {
-    FragColor = texture(textureSampler, TexCoord);
+    if (!IsDiff) 
+    {
+        FragColor = texture(ImgTexture, TexCoord);
+    }
+    else
+    {
+        float diff = texture(ImgTexture, TexCoord).r;
+        diff = (diff - DiffMin) / (DiffMax - DiffMin);
+        diff = clamp(diff, 0.0, 1.0);
+
+        FragColor = diff * vec4(1.0,0.0,0.0,1.0) + (1.0 - diff) * vec4(1.0,1.0,1.0,1.0);
+    }
 }
-"""
+'''
+null_texture_path = './asset/null.png'
+full_screen_position = np.array([[-1.0,1.0],[-1.0,-1.0],[1.0,-1.0],[1.0,1.0]],dtype=float)
+full_texture_texCoord = np.array([[0.0,0.0],[0.0,1.0],[1.0,1.0],[1.0,0.0]],dtype=float)
 
 class ImageWidget(QOpenGLWidget):
-    renderAreaChangedSignal = pyqtSignal(float, float, float, float)
-    pixelSelectedSignal = pyqtSignal(int, int)
+    RenderAreaChangedSignal = pyqtSignal(list)
+    PixelSelectedSignal = pyqtSignal(list)
+    ImgLoadedSignal = pyqtSignal()
 
-    def __init__(self, parent=None, img_data=np.array([[]])):
+    def __init__(self, parent=None, enable_null=True):
         super(ImageWidget, self).__init__(parent)
-        self.bg_enabled = True
+        self.enable_null = enable_null
+        self.null_texture_size = np.array([0,0])
+        self.null_texture = None
+        self.null_pass_shader = None
+        self.null_pass_texCoord = full_texture_texCoord
+
         self.bg_size = 64
         self.bg_pass_shader = None
-        self.bg_pass_position = np.array([[-1.0,-1.0],[1.0,-1.0],[1.0,1.0],[-1.0,1.0]])
-        self.bg_pass_texCoord = np.array([[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0]])
+        self.bg_pass_texCoord = full_texture_texCoord
 
-        self.img_data = img_data
-        self.img_pass_shader = None
+        self.has_img = False
+        self.is_diff = False
+        self.diff_max = 1.0
+        self.diff_min = 0.0
+        self.img_texture_data = np.empty([0,0,3],dtype='uint8')
         self.img_texture = None
-        self.img_pass_position = np.array([[-1.0,-1.0],[1.0,-1.0],[1.0,1.0],[-1.0,1.0]])
-        self.img_pass_texCoord = np.array([[0.0,1.0],[1.0,1.0],[1.0,0.0],[0.0,0.0]])
-        
+        self.img_pass_shader = None
+        self.img_pass_position = full_screen_position
+
     def initializeGL(self):
-        glClearColor(0.0, 0.0, 0.0, 1.0)
+        self.null_texture = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, self.null_texture)
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        null_texture = cv2.imread(null_texture_path)
+        null_texture = cv2.cvtColor(null_texture, cv2.COLOR_BGR2RGB)
+        self.null_texture_size = np.array([null_texture.shape[1], null_texture.shape[0]])
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, self.null_texture_size[0], self.null_texture_size[1], 0, GL_RGB, GL_UNSIGNED_BYTE, null_texture)
+
+        vert_null_shader = compileShader(vert_src, GL_VERTEX_SHADER)
+        frag_null_shader = compileShader(frag_null_src, GL_FRAGMENT_SHADER)
+        self.null_pass_shader = compileProgram(vert_null_shader, frag_null_shader)
+
 
         vert_bg_shader = compileShader(vert_src, GL_VERTEX_SHADER)
         frag_bg_shader = compileShader(frag_bg_src, GL_FRAGMENT_SHADER)
         self.bg_pass_shader = compileProgram(vert_bg_shader, frag_bg_shader)
 
-        vert_img_shader = compileShader(vert_src, GL_VERTEX_SHADER)
-        frag_img_shader = compileShader(frag_img_src, GL_FRAGMENT_SHADER)
-        self.img_pass_shader = compileProgram(vert_img_shader, frag_img_shader)
 
         self.img_texture = glGenTextures(1)
         glBindTexture(GL_TEXTURE_2D, self.img_texture)
@@ -90,59 +138,60 @@ class ImageWidget(QOpenGLWidget):
         glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
-        img_width = self.img_data.shape[1]
-        img_height = self.img_data.shape[0]
-        if img_width == 0 or img_height == 0:
-            return
-        if len(self.img_data.shape) == 3:
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, img_width, img_height, 0, GL_RGB, GL_UNSIGNED_BYTE, self.img_data)
-        if len(self.img_data.shape) == 2:
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, img_width, img_height, 0, GL_RED, GL_FLOAT, self.img_data)
+
+        vert_img_shader = compileShader(vert_src, GL_VERTEX_SHADER)
+        frag_img_shader = compileShader(frag_img_src, GL_FRAGMENT_SHADER)
+        self.img_pass_shader = compileProgram(vert_img_shader, frag_img_shader)
 
     def resizeGL(self, canvas_width, canvas_height):
-        img_width = self.img_data.shape[1]
-        img_height = self.img_data.shape[0]
-
-        ratio = max(float(img_width) / canvas_width, float(img_height) / canvas_height)
-
-        w = float(img_width) / (canvas_width * ratio)
-        h = float(img_height) / (canvas_height * ratio)
-
-        self.img_pass_position = np.array([[-w,-h],[w,-h],[w,h],[-w,h]])
-
         glViewport(0, 0, canvas_width, canvas_height)
 
-    def drawbg(self):
-        canvas_width = self.size().width()
-        canvas_height = self.size().height()
+        canvas_size = np.array([canvas_width, canvas_height],dtype=float)
 
-        w = canvas_width / self.bg_size
-        h = canvas_height / self.bg_size
+        self.null_pass_texCoord = (canvas_size / canvas_size.min()) * (full_texture_texCoord - 0.5) + 0.5
 
-        self.bg_pass_texCoord[1][0] = w
-        self.bg_pass_texCoord[2][0] = w
-        self.bg_pass_texCoord[2][1] = h
-        self.bg_pass_texCoord[3][1] = h
+        self.bg_pass_texCoord = (canvas_size / self.bg_size) * full_texture_texCoord
 
+        if self.has_img:
+            self.initImgPassPosition()
+
+    def drawNull(self):
+        glUseProgram(self.null_pass_shader)
+
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self.null_texture)
+        glUniform1i(glGetUniformLocation(self.null_pass_shader, 'NUllTexture'), 0)
+
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, full_screen_position)
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, self.null_pass_texCoord)
+        glEnableVertexAttribArray(1)
+
+        glDrawArrays(GL_TRIANGLE_FAN, 0, 4)
+
+    def drawBg(self):
         glUseProgram(self.bg_pass_shader)
 
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, self.bg_pass_position)
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, full_screen_position)
         glEnableVertexAttribArray(0)
         glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, self.bg_pass_texCoord)
         glEnableVertexAttribArray(1)
 
         glDrawArrays(GL_TRIANGLE_FAN, 0, 4)
 
-    def drawIamge(self):
+    def drawImg(self):
         glUseProgram(self.img_pass_shader)
 
         glActiveTexture(GL_TEXTURE0)
         glBindTexture(GL_TEXTURE_2D, self.img_texture)
-        glUniform1i(glGetUniformLocation(self.img_pass_shader, "textureSampler"), 0)
+        glUniform1i(glGetUniformLocation(self.img_pass_shader, 'ImgTexture'), 0)
+        glUniform1i(glGetUniformLocation(self.img_pass_shader, 'IsDiff'), self.is_diff)
+        glUniform1f(glGetUniformLocation(self.img_pass_shader, 'DiffMax'), self.diff_max)
+        glUniform1f(glGetUniformLocation(self.img_pass_shader, 'DiffMin'), self.diff_min)
 
         glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, self.img_pass_position)
         glEnableVertexAttribArray(0)
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, self.img_pass_texCoord)
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, full_texture_texCoord)
         glEnableVertexAttribArray(1)
 
         glDrawArrays(GL_TRIANGLE_FAN, 0, 4)
@@ -151,104 +200,156 @@ class ImageWidget(QOpenGLWidget):
         glClear(GL_COLOR_BUFFER_BIT)
         glDisable(GL_DEPTH_TEST)
         
-        if self.bg_enabled:
-            self.drawbg()
+        if self.enable_null and not self.has_img:
+            self.drawNull()
+        else:
+            self.drawBg()
 
-        self.drawIamge()
+        if self.has_img:
+            self.drawImg()
 
     def wheelEvent(self, event: QWheelEvent):
         delta = event.angleDelta().y()
-        mouse_x = event.x()
-        mouse_y = event.y()
-        canvas_width = self.size().width()
-        canvas_height = self.size().height()
+        if not self.has_img:
+            return
         
         ratio = 1.1 if delta > 0 else 1 / 1.1
-
-        press_pixel = np.array([mouse_x, canvas_height-mouse_y],dtype=float)
-        canvas_size = np.array([canvas_width, canvas_height],dtype=float)
-        press_uv = 2 * press_pixel / canvas_size + np.array([-1,-1],dtype=float)
-        img_pass_position = ratio * (self.img_pass_position - press_uv) + press_uv
+        canvas_size = np.array([self.size().width(), self.size().height()],dtype=float)
+        press_pixel = np.array([event.x(), canvas_size[1]-event.y()],dtype=float)
+        
+        press_uv = 2 * press_pixel / canvas_size - 1
+        new_position = ratio * (self.img_pass_position - press_uv) + press_uv
+        if new_position[:,0].max() - new_position[:,0].min() < 1.0 and new_position[:,1].max() - new_position[:,1].min() < 1.0:
+            return 
+        self.img_pass_position = new_position
 
         if debug_print:
-            print("renderAreaChangedSignal: ",img_pass_position[0][0], img_pass_position[0][1], img_pass_position[2][0], img_pass_position[2][1])
-        self.renderAreaChangedSignal.emit(img_pass_position[0][0], img_pass_position[0][1], img_pass_position[2][0], img_pass_position[2][1])
-        self.renderAreaChanged(img_pass_position[0][0], img_pass_position[0][1], img_pass_position[2][0], img_pass_position[2][1])
+            print('RenderAreaChangedSignal: ',self.img_pass_position.tolist())
+        self.RenderAreaChangedSignal.emit(self.img_pass_position.tolist())
+        self.repaint()
 
     def mousePressEvent(self, event: QMouseEvent):
-        mouse_x = event.x()
-        mouse_y = event.y()
-
         self.button = event.button()
-        self.last_press_pixel = np.array([mouse_x, mouse_y],dtype=float)
+        self.last_press_pixel = np.array([event.x(), event.y()],dtype=float)
 
+        if not self.has_img:
+            if self.enable_null and self.button == Qt.MouseButton.LeftButton:
+                path,_ = QFileDialog.getOpenFileName(self, 'Open File', './', 'Image Files(*.jpg *.png)')
+                if path != '':
+                    img_texture = cv2.imread(path)
+                    img_texture = cv2.cvtColor(img_texture, cv2.COLOR_BGR2RGB)
+                    self.SetImgData(img_texture)
+                    if debug_print:
+                        print('ImgLoadedSignal:')
+                    self.ImgLoadedSignal.emit()
+            return
+        
         if self.button == Qt.MouseButton.RightButton:
             canvas_size = np.array([self.size().width(), self.size().height()],dtype=float)
-            press_pos = 2 * self.last_press_pixel / canvas_size - np.array([1,1],dtype=float)
+            press_pos = 2 * self.last_press_pixel / canvas_size - 1
             press_pos[1] = -press_pos[1]
             selected_uv = (press_pos - self.img_pass_position[0]) / (self.img_pass_position[2] - self.img_pass_position[0])
-            selected_uv[1] = 1.0 - selected_uv[1]
+            selected_uv[1] = selected_uv[1]
             if selected_uv[0] >= 0.0 and selected_uv[0] <= 1.0 and selected_uv[1] >= 0.0 and selected_uv[1] <= 1.0:
-                width = self.img_data.shape[1]
-                height = self.img_data.shape[0]
-                img_size = np.array([width,height],dtype=float)
+                img_size = np.array([self.img_texture_data.shape[1], self.img_texture_data.shape[0]],dtype=float)
                 press_tex = selected_uv * img_size
+                press_tex = press_tex.astype(int)
 
                 if debug_print:
-                    print("pixelSelectedSignal:", int(press_tex[1]), int(press_tex[0]))
-                self.pixelSelectedSignal.emit(int(press_tex[1]), int(press_tex[0]))
+                    print('PixelSelectedSignal: ', press_tex.tolist(), ',pixel color:', self.GetPixelData(press_tex[0], press_tex[1]))
+                self.PixelSelectedSignal.emit(press_tex.tolist())
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         self.button = Qt.MouseButton.NoButton
-        self.last_press_pixel = np.array([-1,-1],dtype=float)
-
+        self.last_press_pixel = np.array([-1,-1],dtype=float)        
+        
     def mouseMoveEvent(self, event: QMouseEvent):
-        mouse_x = event.x()
-        mouse_y = event.y()
-    
-        now_press_pixel = np.array([mouse_x, mouse_y],dtype=float)
+        now_press_pixel = np.array([event.x(), event.y()],dtype=float)
         pixel_move = now_press_pixel - self.last_press_pixel
         self.last_press_pixel = now_press_pixel
+
+        if not self.has_img:
+            return
 
         if self.button == Qt.MouseButton.LeftButton:
             pixel_move[1] = -1 * pixel_move[1]
             canvas_size = np.array([self.size().width(), self.size().height()],dtype=float)
             uv_move = 2 * pixel_move / canvas_size
-            img_pass_position = self.img_pass_position + uv_move
+            new_position = self.img_pass_position + uv_move
+            # if new_position[:,0].max() * new_position[:,0].min() > 0.0 or new_position[:,1].max() * new_position[:,1].min() > 0.0:
+            #     return 
+            self.img_pass_position = new_position
 
             if debug_print:
-                print("renderAreaChangedSignal:",img_pass_position[0][0], img_pass_position[0][1], img_pass_position[2][0], img_pass_position[2][1])
-            self.renderAreaChangedSignal.emit(img_pass_position[0][0], img_pass_position[0][1], img_pass_position[2][0], img_pass_position[2][1])
-            self.renderAreaChanged(img_pass_position[0][0], img_pass_position[0][1], img_pass_position[2][0], img_pass_position[2][1])
+                print('RenderAreaChangedSignal: ',self.img_pass_position.tolist())
+            self.RenderAreaChangedSignal.emit(self.img_pass_position.tolist())
+            self.repaint()
     
-    def renderAreaChanged(self, x0, y0, x1, y1):
-        self.img_pass_position = np.array([[x0,y0],[x1,y0],[x1,y1],[x0,y1]])
+    def initImgPassPosition(self):
+        img_size = np.array([self.img_texture_data.shape[1], self.img_texture_data.shape[0]],dtype=float)
+        canvas_size = np.array([self.size().width(), self.size().height()],dtype=float)
+
+        ratio = img_size / canvas_size
+        ratio = ratio / ratio.max()
+
+        self.img_pass_position = ratio * full_screen_position
+
+        if debug_print:
+                print('RenderAreaChangedSignal: ',self.img_pass_position.tolist())
+        self.RenderAreaChangedSignal.emit(self.img_pass_position.tolist())
         self.repaint()
 
-    # shape=[width,height,3],dtype='uint8'
+    # shape=[width,height,3],dtype='uint8' for img, shape=[width,height],dtype='float' for diff
     def SetImgData(self, img_data=np.empty([0,0,3],dtype='uint8')):
-        self.img_data = img_data
-        self.has_img_data = True
-        if img_data.shape[0] == 0 or img_data.shape[1] == 0:
-            self.has_img_data = False
+        self.img_texture_data = img_data
+        img_size = np.array([self.img_texture_data.shape[1], self.img_texture_data.shape[0]])
+
+        self.has_img = True
+        if img_size[0] == 0 or img_size[1] == 0:
+            self.has_img = False
+            return
+
+        self.is_diff = False
+        if len(self.img_texture_data.shape) == 2:
+            self.is_diff = True
+
+        glBindTexture(GL_TEXTURE_2D, self.img_texture)
+        if self.is_diff:
+            self.diff_max = 1.0
+            self.diff_min = 0.0
+            diff_max = self.img_texture_data.max()
+            diff_min = self.img_texture_data.min()
+            normalized_texture_data = (self.img_texture_data - diff_min) / (diff_max - diff_min)
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, img_size[0], img_size[1], 0, GL_RED, GL_FLOAT, normalized_texture_data)
+        else:
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, img_size[0], img_size[1], 0, GL_RGB, GL_UNSIGNED_BYTE, self.img_texture_data)
+
+        self.initImgPassPosition()
         self.repaint()
 
-    # shape=[width,height],dtype='float'
-    def SetDiffData(self, diff_data=np.empty([0,0],dtype='float')):
-        self.img_data = diff_data
-        self.has_diff_data = True
-        if diff_data.shape[0] == 0 or diff_data.shape[1] == 0:
-            self.has_diff_data = False
-        self.repaint()
-    
     def SetDiffDataRange(self, lower, upper):
-        self.diff_data_range = np.array([0,1],dtype='float')
-        if self.has_diff_data:
+        if self.has_img and self.is_diff:
+            diff_max = self.img_texture_data.max()
+            diff_min = self.img_texture_data.min()
+            self.diff_max = (upper - diff_min) / (diff_max - diff_min)
+            self.diff_min = (lower - diff_min) / (diff_max - diff_min)
             self.repaint()
 
-    def SetRenderArea(self, x0, y0, x1, y1):
-        self.img_pass_position = np.array([[x0,y0],[x1,y0],[x1,y1],[x0,y1]])
+    def SetRenderArea(self, render_area):
+        if not self.has_img:
+            return
+        
+        self.img_pass_position = render_area
         self.repaint()
+
+    def HasImg(self):
+        return self.has_img
+
+    def GetImgData(self):
+        return self.img_texture_data
+    
+    def GetPixelData(self, x, y):
+        return self.img_texture_data[y][x]
 
 import sys
 import cv2
@@ -258,9 +359,7 @@ if __name__ == '__main__':
 
     app = QApplication(sys.argv)
 
-    image = cv2.imread("./test/original/1.png")
-    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    widget = ImageWidget(None, image_rgb)
+    widget = ImageWidget(None, True)
 
     widget.resize(800, 600)
     widget.show()

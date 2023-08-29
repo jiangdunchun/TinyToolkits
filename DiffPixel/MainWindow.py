@@ -1,8 +1,7 @@
 from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
-from ImageWidgetFile import *
-from OpenPathWidget import *
+from ImageWidget import *
 import cv2
     
 class MainWindow(QWidget):  
@@ -21,17 +20,20 @@ class MainWindow(QWidget):
         main_vbox.addLayout(self.image_hbox,1)
 
         self.original_widget = ImageWidget(None,True)
-        self.original_widget.renderAreaChangedSignal.connect(self.reader_area_changed)
+        self.original_widget.RenderAreaChangedSignal.connect(self.reader_area_changed)
         self.original_widget.ImgLoadedSignal.connect(self.img_loaded)
+        self.original_widget.PixelSelectedSignal.connect(self.select_pixel)
         self.image_hbox.addWidget(self.original_widget,1)
 
         self.modified_widget = ImageWidget(None,True)
-        self.modified_widget.renderAreaChangedSignal.connect(self.reader_area_changed)
+        self.modified_widget.RenderAreaChangedSignal.connect(self.reader_area_changed)
         self.modified_widget.ImgLoadedSignal.connect(self.img_loaded)
+        self.modified_widget.PixelSelectedSignal.connect(self.select_pixel)
         self.image_hbox.addWidget(self.modified_widget,1)
 
         self.result_widget = ImageWidget(None,False)
-        self.result_widget.renderAreaChangedSignal.connect(self.reader_area_changed)
+        self.result_widget.RenderAreaChangedSignal.connect(self.reader_area_changed)
+        self.result_widget.PixelSelectedSignal.connect(self.select_pixel)
         self.image_hbox.addWidget(self.result_widget,1)
 
         setting_hbox = QHBoxLayout()
@@ -39,6 +41,7 @@ class MainWindow(QWidget):
 
         self.diff_func_combo_box = QComboBox()
         self.diff_func_combo_box.addItems(self.diff_functions.keys())
+        self.diff_func_combo_box.currentIndexChanged.connect(self.img_loaded)
         setting_hbox.addWidget(self.diff_func_combo_box,0)
 
         setting_h_spacer = QSpacerItem(700,13,QSizePolicy.Expanding,QSizePolicy.Minimum)
@@ -58,7 +61,15 @@ class MainWindow(QWidget):
             diff_func = self.diff_functions[self.diff_func_combo_box.currentText()]
             diff_data = diff_func(self.original_widget.GetImgData(), self.modified_widget.GetImgData())
             self.result_widget.SetImgData(diff_data)
-            self.result_widget.SetDiffDataRange(0.0,10.0)
+            self.result_widget.SetDiffDataRange(0.0,100.0)
+
+    def select_pixel(self, pixel):
+        if self.original_widget.HasImg() and self.modified_widget.HasImg():
+            original_color = self.original_widget.GetPixelData(pixel[0], pixel[1])
+            modified_color = self.modified_widget.GetPixelData(pixel[0], pixel[1])
+            diff = self.result_widget.GetPixelData(pixel[0], pixel[1])
+            print('original:', original_color.tolist(), ',modified:', modified_color.tolist(), ',diff:', diff)
+
 
 
 
