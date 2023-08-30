@@ -97,6 +97,9 @@ class ImageWidget(QOpenGLWidget):
         self.null_pass_shader = None
         self.null_pass_texCoord = full_texture_texCoord
 
+        if self.enable_null:
+            self.setAcceptDrops(True)
+
         self.bg_size = 64
         self.bg_pass_shader = None
         self.bg_pass_texCoord = full_texture_texCoord
@@ -208,6 +211,24 @@ class ImageWidget(QOpenGLWidget):
         if self.has_img:
             self.drawImg()
 
+    def loadFile(self, path):
+        if not self.enable_null:
+            return True
+        
+        img_texture = cv2.imread(path)
+        if img_texture is None:
+            msg_box = QMessageBox(QMessageBox.Warning, 'Error', 'Not a image file!')
+            msg_box.exec_()
+            return False
+        
+        img_texture = cv2.cvtColor(img_texture, cv2.COLOR_BGR2RGB)
+        self.SetImgData(img_texture)
+        if debug_print:
+            print('ImgLoadedSignal:')
+        self.ImgLoadedSignal.emit()
+        
+        return True
+
     def wheelEvent(self, event: QWheelEvent):
         delta = event.angleDelta().y()
         if not self.has_img:
@@ -228,6 +249,18 @@ class ImageWidget(QOpenGLWidget):
         self.RenderAreaChangedSignal.emit(self.img_pass_position.tolist())
         self.repaint()
 
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasText():
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        path_list = event.mimeData().text()
+        path = path_list.split('\n')[0]
+        path = path.replace('file:///', '', 1)
+        self.loadFile(path)
+
     def mousePressEvent(self, event: QMouseEvent):
         self.button = event.button()
         self.last_press_pixel = np.array([event.x(), event.y()],dtype=float)
@@ -235,13 +268,7 @@ class ImageWidget(QOpenGLWidget):
         if not self.has_img:
             if self.enable_null and self.button == Qt.MouseButton.LeftButton:
                 path,_ = QFileDialog.getOpenFileName(self, 'Open File', './', 'Image Files(*.jpg *.png)')
-                if path != '':
-                    img_texture = cv2.imread(path)
-                    img_texture = cv2.cvtColor(img_texture, cv2.COLOR_BGR2RGB)
-                    self.SetImgData(img_texture)
-                    if debug_print:
-                        print('ImgLoadedSignal:')
-                    self.ImgLoadedSignal.emit()
+                self.loadFile(path)
             return
         
         if self.button == Qt.MouseButton.RightButton:
