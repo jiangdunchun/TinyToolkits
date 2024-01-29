@@ -22,17 +22,17 @@ void main()
     TexCoord = texCoord;
 }
 '''
-frag_null_src = '''
+frag_hint_src = '''
 #version 330 core
 
 in vec2 TexCoord;
 out vec4 FragColor;
 
-uniform sampler2D NUllTexture;
+uniform sampler2D hintTexture;
 
 void main()
 {
-    FragColor = texture(NUllTexture, TexCoord);
+    FragColor = texture(hintTexture, TexCoord);
 }
 '''
 frag_bg_src = '''
@@ -80,7 +80,7 @@ void main()
     }
 }
 '''
-null_texture_path = './asset/null.png'
+hint_texture_path = './asset/hint.png'
 full_screen_position = np.array([[-1.0,1.0],[-1.0,-1.0],[1.0,-1.0],[1.0,1.0]],dtype=float)
 full_texture_texCoord = np.array([[0.0,0.0],[0.0,1.0],[1.0,1.0],[1.0,0.0]],dtype=float)
 
@@ -89,15 +89,15 @@ class ImageWidget(QOpenGLWidget):
     PixelSelectedSignal = pyqtSignal(list)
     ImgLoadedSignal = pyqtSignal()
 
-    def __init__(self, parent=None, enable_null=True):
+    def __init__(self, parent=None, enable_load=True):
         super(ImageWidget, self).__init__(parent)
-        self.enable_null = enable_null
-        self.null_texture_size = np.array([0,0])
-        self.null_texture = None
-        self.null_pass_shader = None
-        self.null_pass_texCoord = full_texture_texCoord
+        self.enable_load = enable_load
+        self.hint_texture_size = np.array([0,0])
+        self.hint_texture = None
+        self.hint_pass_shader = None
+        self.hint_pass_texCoord = full_texture_texCoord
 
-        if self.enable_null:
+        if self.enable_load:
             self.setAcceptDrops(True)
 
         self.bg_size = 64
@@ -114,20 +114,20 @@ class ImageWidget(QOpenGLWidget):
         self.img_pass_position = full_screen_position
 
     def initializeGL(self):
-        self.null_texture = glGenTextures(1)
-        glBindTexture(GL_TEXTURE_2D, self.null_texture)
+        self.hint_texture = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, self.hint_texture)
         glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
         glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-        null_texture = cv2.imread(null_texture_path)
-        null_texture = cv2.cvtColor(null_texture, cv2.COLOR_BGR2RGB)
-        self.null_texture_size = np.array([null_texture.shape[1], null_texture.shape[0]])
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, self.null_texture_size[0], self.null_texture_size[1], 0, GL_RGB, GL_UNSIGNED_BYTE, null_texture)
+        hint_texture = cv2.imread(hint_texture_path)
+        hint_texture = cv2.cvtColor(hint_texture, cv2.COLOR_BGR2RGB)
+        self.hint_texture_size = np.array([hint_texture.shape[1], hint_texture.shape[0]])
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, self.hint_texture_size[0], self.hint_texture_size[1], 0, GL_RGB, GL_UNSIGNED_BYTE, hint_texture)
 
-        vert_null_shader = compileShader(vert_src, GL_VERTEX_SHADER)
-        frag_null_shader = compileShader(frag_null_src, GL_FRAGMENT_SHADER)
-        self.null_pass_shader = compileProgram(vert_null_shader, frag_null_shader)
+        vert_hint_shader = compileShader(vert_src, GL_VERTEX_SHADER)
+        frag_hint_shader = compileShader(frag_hint_src, GL_FRAGMENT_SHADER)
+        self.hint_pass_shader = compileProgram(vert_hint_shader, frag_hint_shader)
 
 
         vert_bg_shader = compileShader(vert_src, GL_VERTEX_SHADER)
@@ -151,23 +151,23 @@ class ImageWidget(QOpenGLWidget):
 
         canvas_size = np.array([canvas_width, canvas_height],dtype=float)
 
-        self.null_pass_texCoord = (canvas_size / canvas_size.min()) * (full_texture_texCoord - 0.5) + 0.5
+        self.hint_pass_texCoord = (canvas_size / canvas_size.min()) * (full_texture_texCoord - 0.5) + 0.5
 
         self.bg_pass_texCoord = (canvas_size / self.bg_size) * full_texture_texCoord
 
         if self.has_img:
             self.initImgPassPosition()
 
-    def drawNull(self):
-        glUseProgram(self.null_pass_shader)
+    def drawHint(self):
+        glUseProgram(self.hint_pass_shader)
 
         glActiveTexture(GL_TEXTURE0)
-        glBindTexture(GL_TEXTURE_2D, self.null_texture)
-        glUniform1i(glGetUniformLocation(self.null_pass_shader, 'NUllTexture'), 0)
+        glBindTexture(GL_TEXTURE_2D, self.hint_texture)
+        glUniform1i(glGetUniformLocation(self.hint_pass_shader, 'hintTexture'), 0)
 
         glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, full_screen_position)
         glEnableVertexAttribArray(0)
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, self.null_pass_texCoord)
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, self.hint_pass_texCoord)
         glEnableVertexAttribArray(1)
 
         glDrawArrays(GL_TRIANGLE_FAN, 0, 4)
@@ -203,8 +203,8 @@ class ImageWidget(QOpenGLWidget):
         glClear(GL_COLOR_BUFFER_BIT)
         glDisable(GL_DEPTH_TEST)
         
-        if self.enable_null and not self.has_img:
-            self.drawNull()
+        if self.enable_load and not self.has_img:
+            self.drawHint()
         else:
             self.drawBg()
 
@@ -212,7 +212,7 @@ class ImageWidget(QOpenGLWidget):
             self.drawImg()
 
     def loadFile(self, path):
-        if not self.enable_null:
+        if not self.enable_load:
             return True
         
         img_texture = cv2.imread(path)
@@ -266,7 +266,7 @@ class ImageWidget(QOpenGLWidget):
         self.last_press_pixel = np.array([event.x(), event.y()],dtype=float)
 
         if not self.has_img:
-            if self.enable_null and self.button == Qt.MouseButton.LeftButton:
+            if self.enable_load and self.button == Qt.MouseButton.LeftButton:
                 path,_ = QFileDialog.getOpenFileName(self, 'Open File', './', 'Image Files(*.jpg *.png)')
                 self.loadFile(path)
             return
