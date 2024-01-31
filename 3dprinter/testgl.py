@@ -65,7 +65,6 @@ def display():
     p_z = (p_b * float(sum - index) + p_a * float(index)) / float(sum)
     p_m = (p_z + p_a) / 2
     dz = p_a - p_m
-    print(p_m, dz)
 
     glDisable(GL_CULL_FACE)
     glDisable(GL_DEPTH_TEST)
@@ -85,11 +84,9 @@ def display():
             v = vertices[i-1]
             v = v - p_m
             #print(v)
-            v = np.array([np.dot(v,dx)/np.sqrt((dx*dx).sum()), np.dot(v,dy)/np.sqrt((dy*dy).sum()),np.dot(v,dz)/np.sqrt((dz*dz).sum()) ])
+            v = np.array([np.dot(v,dx)/(dx*dx).sum(), np.dot(v,dy)/(dy*dy).sum(),np.dot(v,dz)/(dz*dz).sum() ])
             #print(v[0],",", v[1],",",v[2])
             glVertex3f(v[0],v[1],v[2])
-            if v[2] < -1.0 or v[2] > 1.0:
-                print(v)
     #     print(" ")
 
     # glVertex3f(0.891067 , 0.7144076067891121 , 0.0)
